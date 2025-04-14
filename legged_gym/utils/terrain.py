@@ -58,6 +58,19 @@ class Terrain:
         self.tot_rows = int(cfg.num_rows * self.length_per_env_pixels) + 2 * self.border
 
         self.height_field_raw = np.zeros((self.tot_rows , self.tot_cols), dtype=np.int16)
+        self.terrain_names = np.empty(cfg.num_cols, dtype=np.int16)
+        self.terrain_name_to_id = {
+            "pyramid_sloped_neg": 0,
+            "pyramid_sloped": 1,
+            "pyramid_sloped_random": 2,
+            "pyramid_stairs_neg": 3,
+            "pyramid_stairs": 4,
+            "discrete_obstacles": 5,
+            "stepping_stones": 6,
+            "gap": 7,
+            "pit": 8
+        }
+
         if cfg.curriculum:
             self.curiculum()
         elif cfg.selected:
@@ -86,6 +99,7 @@ class Terrain:
         for j in range(self.cfg.num_cols):
             for i in range(self.cfg.num_rows):
                 difficulty = i / self.cfg.num_rows
+                # difficulty = 0.5
                 choice = j / self.cfg.num_cols + 0.001
 
                 terrain = self.make_terrain(choice, difficulty)
@@ -112,6 +126,7 @@ class Terrain:
                                 length=self.width_per_env_pixels,
                                 vertical_scale=self.cfg.vertical_scale,
                                 horizontal_scale=self.cfg.horizontal_scale)
+        terrain_type = None
         slope = difficulty * 0.4
         step_height = 0.05 + 0.18 * difficulty
         discrete_obstacles_height = 0.05 + difficulty * 0.2
@@ -121,27 +136,39 @@ class Terrain:
         pit_depth = 1. * difficulty
         if choice < self.proportions[0]:
             if choice < self.proportions[0]/ 2:
+                terrain_type = "pyramid_sloped_neg"
                 slope *= -1
+            else:
+                terrain_type = "pyramid_sloped"
             terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
         elif choice < self.proportions[1]:
+            terrain_type = "pyramid_sloped_random"
             terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=3.)
             terrain_utils.random_uniform_terrain(terrain, min_height=-0.05, max_height=0.05, step=0.005, downsampled_scale=0.2)
         elif choice < self.proportions[3]:
             if choice<self.proportions[2]:
                 step_height *= -1
+                terrain_type = "pyramid_stairs_neg"
+            else:
+                terrain_type = "pyramid_stairs"
             terrain_utils.pyramid_stairs_terrain(terrain, step_width=0.31, step_height=step_height, platform_size=3.)
         elif choice < self.proportions[4]:
+            terrain_type = "discrete_obstacles"
             num_rectangles = 20
             rectangle_min_size = 1.
             rectangle_max_size = 2.
             terrain_utils.discrete_obstacles_terrain(terrain, discrete_obstacles_height, rectangle_min_size, rectangle_max_size, num_rectangles, platform_size=3.)
         elif choice < self.proportions[5]:
+            terrain_type = "stepping_stones"
             terrain_utils.stepping_stones_terrain(terrain, stone_size=stepping_stones_size, stone_distance=stone_distance, max_height=0., platform_size=4.)
         elif choice < self.proportions[6]:
+            terrain_type = "gap"
             gap_terrain(terrain, gap_size=gap_size, platform_size=3.)
         else:
+            terrain_type = "pit"
             pit_terrain(terrain, depth=pit_depth, platform_size=4.)
         
+        terrain.terrain_type = terrain_type
         return terrain
 
     def add_terrain_to_map(self, terrain, row, col):
@@ -162,6 +189,7 @@ class Terrain:
         y2 = int((self.env_width/2. + 1) / terrain.horizontal_scale)
         env_origin_z = np.max(terrain.height_field_raw[x1:x2, y1:y2])*terrain.vertical_scale
         self.env_origins[i, j] = [env_origin_x, env_origin_y, env_origin_z]
+        self.terrain_names[j] = self.terrain_name_to_id[terrain.terrain_type]
 
 def gap_terrain(terrain, gap_size, platform_size=1.):
     gap_size = int(gap_size / terrain.horizontal_scale)
